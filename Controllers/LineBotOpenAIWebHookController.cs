@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -17,13 +17,13 @@ namespace isRock.Template
         [HttpPost]
         public IActionResult POST()
         {
-            // 注意：如果您沒有正確的 Admin User ID，請保持這裡為空或維持現狀，
-            // 但我已經在下方 catch 區塊做了防呆，不會再讓它導致程式崩潰。
-            const string AdminUserId = "34f6f75d30772c7d4a1605f1cf4a86e8"; 
+            // 管理員 ID，若無則保持現狀
+            const string AdminUserId = "34f6f75d30772c7d4a1605f1cf4a86e8";
 
             try
             {
-                this.ChannelAccessToken = "+TMqgSuSc5xQ3exc9raMYDXo+TMC6wDV7JrtcmZ0fxWWnWotHZt9zdFpciHI8nrV4lUqjXmbJgNpxvlcQx6axHyJYJevUP2tRSWfIjItxlgqrSXz1+YJjAJuT2IxedI+EiifbH4MPQLxxTDlmWE1pQdB04t89/1O/w1cDnyilFU="; 
+                // LINE 頻道 Token
+                this.ChannelAccessToken = "+TMqgSuSc5xQ3exc9raMYDXo+TMC6wDV7JrtcmZ0fxWWnWotHZt9zdFpciHI8nrV4lUqjXmbJgNpxvlcQx6axHyJYJevUP2tRSWfIjItxlgqrSXz1+YJjAJuT2IxedI+EiifbH4MPQLxxTDlmWE1pQdB04t89/1O/w1cDnyilFU=";
 
                 var LineEvent = this.ReceivedMessage?.events?.FirstOrDefault();
                 if (LineEvent == null || LineEvent.replyToken == "00000000000000000000000000000000") return Ok();
@@ -44,13 +44,13 @@ namespace isRock.Template
                         } else {
                             searchResults = KeylessSearchService.GoogleSearch(userMsg);
                         }
-                        
+
                         // 終端機顯示抓到的資料內容
                         Console.WriteLine($">>> [系統診斷] 抓取結果: {searchResults}");
 
                         // 呼叫 LLM
                         string responseMsg = LLM.getResponse(userMsg, searchResults);
-                        
+
                         // 執行回覆
                         this.ReplyMessage(LineEvent.replyToken, responseMsg);
                     }
@@ -59,7 +59,6 @@ namespace isRock.Template
             }
             catch (Exception ex)
             {
-                // 改進：只在終端機印出錯誤，不強制 PushMessage 避免二次崩潰
                 Console.WriteLine($">>> [重要錯誤]: {ex.Message}");
                 return Ok();
             }
@@ -71,11 +70,10 @@ namespace isRock.Template
         public static string GetWeatherInfo(string query)
         {
             try {
-                // 座標判斷 (台東 22.7, 121.1 / 台北 25.0, 121.5)
                 string lat = query.Contains("台東") ? "22.75" : "25.03";
                 string lon = query.Contains("台東") ? "121.15" : "121.56";
                 string url = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&timezone=Asia%2FTaipei";
-                
+
                 using (var client = new HttpClient()) {
                     var json = client.GetStringAsync(url).Result;
                     var data = JsonConvert.DeserializeObject<dynamic>(json);
@@ -92,7 +90,7 @@ namespace isRock.Template
                     string url = $"https://www.google.com/search?q={Uri.EscapeDataString(query)}&gbv=1";
                     var html = client.GetStringAsync(url).Result;
                     var matches = Regex.Matches(html, @"<(div|span) class=""[^""]*(BNeawe s3v9rd AP7Wnd)[^""]*"">([^<]+)</(div|span)>");
-                    
+
                     if (matches.Count == 0) return "目前查無即時新聞";
                     return string.Join("\n", matches.Cast<Match>().Take(3).Select(m => "- " + m.Groups[3].Value));
                 }
@@ -100,60 +98,55 @@ namespace isRock.Template
         }
     }
 
-    
-{
-    // 1. 刪除原本的 const string，改用變數讀取
-    // 注意：Environment 讀取不是常數，所以不能用 const
-    private static string GitHubModelKey => Environment.GetEnvironmentVariable("GITHUB_MODEL_KEY") ?? "";
-
-    public static string getResponse(string userMsg, string searchContext)
+    public class LLM
     {
-        // 2. 檢查金鑰是否存在，避免程式崩潰
-        if (string.IsNullOrEmpty(GitHubModelKey))
-        {
-            return "錯誤：找不到 API 金鑰，請在 Render 設定環境變數 GITHUB_MODEL_KEY。";
-        }
+        // 從環境變數讀取金鑰，避免 GitHub 洩漏檢測
+        private static string GitHubModelKey => Environment.GetEnvironmentVariable("GITHUB_MODEL_KEY") ?? "";
 
-        var MessageBody = new
+        public static string getResponse(string userMsg, string searchContext)
         {
-            model = "gpt-4o", 
-            messages = new[]
+            if (string.IsNullOrEmpty(GitHubModelKey))
             {
-                new
+                return "錯誤：找不到 API 金鑰，請在 Render 設定環境變數 GITHUB_MODEL_KEY。";
+            }
+
+            var MessageBody = new
+            {
+                model = "gpt-4o",
+                messages = new[]
                 {
-                    role = "system",
-                    content = $@"你是一位溫暖的華德福導師。
+                    new {
+                        role = "system",
+                        content = $@"你是一位溫暖的華德福導師。
 現在時間是 {DateTime.Now:yyyy/MM/dd HH:mm}。
 請優先參考以下搜尋數據來回答，並用優美的語言轉述。
 
 【參考數據】：
 {searchContext}"
+                    },
+                    new { role = "user", content = userMsg },
                 },
-                new { role = "user", content = userMsg },
-            },
-        };
+            };
 
-        using (var client = new HttpClient()) 
-        {
-            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {GitHubModelKey}");
-            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            // 必須加入 User-Agent 否則有些 AI 服務會拒絕連線
-            client.DefaultRequestHeaders.Add("User-Agent", "DotNetApp");
-
-            var content = new StringContent(JsonConvert.SerializeObject(MessageBody), Encoding.UTF8, "application/json");
-            
-            var response = client.PostAsync("https://models.github.ai/inference/chat/completions", content).Result;
-            
-            // 3. 增加簡單的錯誤檢查
-            if (!response.IsSuccessStatusCode)
+            using (var client = new HttpClient())
             {
-                return $"AI 暫時無法回應 (HTTP {response.StatusCode})";
-            }
+                client.DefaultRequestHeaders.Add("Authorization", $"Bearer {GitHubModelKey}");
+                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                client.DefaultRequestHeaders.Add("User-Agent", "DotNetApp");
 
-            var resultString = response.Content.ReadAsStringAsync().Result;
-            var obj = JsonConvert.DeserializeObject<dynamic>(resultString);
-            
-            return obj.choices[0].message.content.Value;
+                var content = new StringContent(JsonConvert.SerializeObject(MessageBody), Encoding.UTF8, "application/json");
+                var response = client.PostAsync("https://models.github.ai/inference/chat/completions", content).Result;
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var err = response.Content.ReadAsStringAsync().Result;
+                    return $"AI 暫時無法回應 (HTTP {response.StatusCode})。詳情: {err}";
+                }
+
+                var resultString = response.Content.ReadAsStringAsync().Result;
+                var obj = JsonConvert.DeserializeObject<dynamic>(resultString);
+                return obj.choices[0].message.content.Value;
+            }
         }
     }
-}
+} 
