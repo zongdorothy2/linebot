@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "bFJu8v1plRU=",
+  "success": true,
+  "projectFilePath": "/workspaces/linebot/linebot.csproj",
+  "expectedPackageFiles": [
+    "/home/codespace/.nuget/packages/linebotsdk/2.18.45/linebotsdk.2.18.45.nupkg.sha512",
+    "/home/codespace/.nuget/packages/microsoft.aspnetcore.openapi/10.0.0/microsoft.aspnetcore.openapi.10.0.0.nupkg.sha512",
+    "/home/codespace/.nuget/packages/microsoft.openapi/2.0.0/microsoft.openapi.2.0.0.nupkg.sha512",
+    "/home/codespace/.nuget/packages/newtonsoft.json/13.0.1/newtonsoft.json.13.0.1.nupkg.sha512"
+  ],
+  "logs": []
+}
