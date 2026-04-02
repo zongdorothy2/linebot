@@ -54,10 +54,21 @@ namespace isRock.Template
     // --- 2. 主程式控制器 ---
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
+        // ---------------------------------------------------------
+        // 新增：這段讓監控工具 (GET) 能成功連線，回傳 200 OK
+        // ---------------------------------------------------------
+        [HttpGet]
+        [Route("api/LineBotOpenAIWebHook")]
+        public IActionResult Get()
+        {
+            return Ok("Bot is Alive!");
+        }
+
         [Route("api/LineBotOpenAIWebHook")]
         [HttpPost]
         public async Task<IActionResult> POST() // 改為非同步 Task
         {
+            // 管理員 ID (保留供後續管理功能使用)
             const string AdminUserId = "34f6f75d30772c7d4a1605f1cf4a86e8";
 
             try
@@ -141,7 +152,6 @@ namespace isRock.Template
         public static async Task<string> GoogleSearchAsync(string query)
         {
             try {
-                // 加入隨機延遲 (1-2.5秒)，降低被 Google 封鎖機率
                 await Task.Delay(_random.Next(1000, 2500));
 
                 using (var client = new HttpClient()) {
