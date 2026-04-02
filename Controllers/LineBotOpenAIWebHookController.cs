@@ -12,7 +12,7 @@ using Newtonsoft.Json;
 
 namespace isRock.Template
 {
-    // --- 1. 使用量管理員 (每日 50 次限制) ---
+    // --- 1. 使用量管理員 (每日 50 次互動限制) ---
     public static class UsageManager
     {
         private static int _todayCount = 0;
@@ -34,7 +34,6 @@ namespace isRock.Template
                 {
                     _todayCount = 0;
                     _nextResetTime = GetNextResetTime();
-                    Console.WriteLine($">>> [系統通知] 已到達 08:00，重置計數器。");
                 }
                 isOverLimit = _todayCount >= 50;
                 if (!isOverLimit) _todayCount++;
@@ -62,45 +61,36 @@ namespace isRock.Template
         }
     }
 
-    // --- 3. 新增：搜尋快取管理員 (節省 Serper 點數) ---
+    // --- 3. 搜尋快取管理員 (節省重複搜尋點數) ---
     public static class SearchCacheManager
     {
         private class CacheEntry {
             public string Result { get; set; }
             public DateTime ExpireTime { get; set; }
         }
-
         private static readonly ConcurrentDictionary<string, CacheEntry> _searchCache = new ConcurrentDictionary<string, CacheEntry>();
-        private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30); // 設定快取有效時間為 30 分鐘
+        private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
 
         public static bool TryGetCache(string query, out string result)
         {
             if (_searchCache.TryGetValue(query, out var entry))
             {
-                if (DateTime.Now < entry.ExpireTime)
-                {
-                    result = entry.Result;
-                    return true;
-                }
-                _searchCache.TryRemove(query, out _); // 過期則移除
+                if (DateTime.Now < entry.ExpireTime) { result = entry.Result; return true; }
+                _searchCache.TryRemove(query, out _);
             }
-            result = null;
-            return false;
+            result = null; return false;
         }
 
         public static void SetCache(string query, string result)
         {
-            var entry = new CacheEntry {
-                Result = result,
-                ExpireTime = DateTime.Now.Add(CacheDuration)
-            };
-            _searchCache[query] = entry;
+            _searchCache[query] = new CacheEntry { Result = result, ExpireTime = DateTime.Now.Add(CacheDuration) };
         }
     }
 
     // --- 4. 主程式控制器 ---
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
+        // 支援 Better Stack 監控，不消耗任何 API 次數
         [HttpHead]
         [HttpGet]
         [Route("api/LineBotOpenAIWebHook")]
@@ -113,7 +103,6 @@ namespace isRock.Template
             try
             {
                 this.ChannelAccessToken = "+TMqgSuSc5xQ3exc9raMYDXo+TMC6wDV7JrtcmZ0fxWWnWotHZt9zdFpciHI8nrV4lUqjXmbJgNpxvlcQx6axHyJYJevUP2tRSWfIjItxlgqrSXz1+YJjAJuT2IxedI+EiifbH4MPQLxxTDlmWE1pQdB04t89/1O/w1cDnyilFU=";
-
                 var LineEvent = this.ReceivedMessage?.events?.FirstOrDefault();
                 if (LineEvent == null || LineEvent.replyToken == "00000000000000000000000000000000") return Ok();
 
@@ -121,33 +110,36 @@ namespace isRock.Template
                 {
                     string userId = LineEvent.source.userId;
                     string userMsg = LineEvent.message.text;
-                    bool isPrivate = LineEvent.source.type.ToLower() == "user";
-                    bool isMentioned = LineEvent.message.mention?.mentionees?.Any(m => m.isSelf == true) ?? false;
 
-                    if (isPrivate || isMentioned)
+                    if (LineEvent.source.type.ToLower() == "user" || (LineEvent.message.mention?.mentionees?.Any(m => m.isSelf == true) ?? false))
                     {
                         bool isOverLimit;
                         int currentCount = UsageManager.GetAndIncrementCount(out isOverLimit);
-
-                        if (isOverLimit)
-                        {
-                            this.ReplyMessage(LineEvent.replyToken, "🌟 今日互動額度已滿，明早 8 點再相見。");
+                        if (isOverLimit) {
+                            this.ReplyMessage(LineEvent.replyToken, "🌟 今日互動額度已滿，明早 8 點見。");
                             return Ok();
                         }
 
-                        // B. 執行搜尋 (內含快取檢查邏輯)
+                        // --- 方案 A：智慧判定是否需要搜尋 ---
                         string searchResults = "";
-                        if (userMsg.Contains("天氣") || userMsg.Contains("氣溫")) {
-                            searchResults = await KeylessSearchService.GetWeatherInfoAsync(userMsg);
-                        } else {
-                            searchResults = await SerperSearchService.GoogleSearchWithCacheAsync(userMsg);
+                        string[] searchKeywords = { "今天", "現在", "幾點", "日期", "時間", "什麼時候", "天氣", "氣溫", "新聞", "2025", "2026", "哪裡有", "地址", "多少錢", "推薦", "活動" };
+                        bool needsSearch = searchKeywords.Any(k => userMsg.Contains(k));
+
+                        if (needsSearch)
+                        {
+                            if (userMsg.Contains("天氣") || userMsg.Contains("氣溫"))
+                                searchResults = await KeylessSearchService.GetWeatherInfoAsync(userMsg);
+                            else
+                                searchResults = await SerperSearchService.GoogleSearchWithCacheAsync(userMsg);
+                        }
+                        else
+                        {
+                            Console.WriteLine($">>> [省錢模式] 識別為一般對話，跳過 Serper 搜尋。內容: {userMsg}");
                         }
 
                         ChatHistoryManager.AddMessage(userId, "user", userMsg);
-
                         var userHistory = ChatHistoryManager.GetHistory(userId);
                         string responseMsg = await LLM.getResponseWithHistoryAsync(userHistory, searchResults);
-
                         ChatHistoryManager.AddMessage(userId, "assistant", responseMsg);
 
                         string finalMsg = $@"{responseMsg}
@@ -159,57 +151,38 @@ namespace isRock.Template
                 }
                 return Ok();
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($">>> [系統錯誤]: {ex.Message}");
+            catch (Exception ex) {
+                Console.WriteLine($">>> [錯誤]: {ex.Message}");
                 return Ok();
             }
         }
     }
 
-    // --- 5. 搜尋服務 (整合快取) ---
+    // --- 5. 搜尋服務 (Serper.dev) ---
     public class SerperSearchService
     {
         private const string SerperApiKey = "82153d7f3577fc91edf635839630e669623360e3";
-
         public static async Task<string> GoogleSearchWithCacheAsync(string query)
         {
-            // 1. 先看快取裡有沒有
-            if (SearchCacheManager.TryGetCache(query, out string cachedResult))
-            {
-                Console.WriteLine($">>> [快取命中] 使用舊有搜尋結果，省下 1 點 Serper 額度。關鍵字: {query}");
-                return cachedResult;
-            }
-
-            // 2. 沒找到才呼叫 API
-            try
-            {
-                using (var client = new HttpClient())
-                {
+            if (SearchCacheManager.TryGetCache(query, out string cachedResult)) return cachedResult;
+            try {
+                using (var client = new HttpClient()) {
                     client.DefaultRequestHeaders.Add("X-API-KEY", SerperApiKey);
-                    var payload = new { q = query, gl = "tw", hl = "zh-tw" };
-                    var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-                    
+                    var content = new StringContent(JsonConvert.SerializeObject(new { q = query, gl = "tw", hl = "zh-tw" }), Encoding.UTF8, "application/json");
                     var response = await client.PostAsync("https://google.serper.dev/search", content);
                     var json = await response.Content.ReadAsStringAsync();
                     var data = JsonConvert.DeserializeObject<dynamic>(json);
-
                     StringBuilder sb = new StringBuilder();
                     if (data.answerBox != null) sb.AppendLine($"[精選答案]: {data.answerBox.answer ?? data.answerBox.snippet}");
                     if (data.organic != null) {
                         foreach (var item in ((IEnumerable<dynamic>)data.organic).Take(3)) 
                             sb.AppendLine($"- {item.title}: {item.snippet}");
                     }
-
-                    string finalResult = sb.Length > 0 ? sb.ToString() : "目前查無即時資訊";
-
-                    // 3. 存入快取
-                    SearchCacheManager.SetCache(query, finalResult);
-
-                    return finalResult;
+                    string result = sb.Length > 0 ? sb.ToString() : "目前查無即時資訊";
+                    SearchCacheManager.SetCache(query, result);
+                    return result;
                 }
-            }
-            catch { return "搜尋連線失敗"; }
+            } catch { return "搜尋連線失敗"; }
         }
     }
 
@@ -231,42 +204,28 @@ namespace isRock.Template
         }
     }
 
-    // --- 7. AI 核心 ---
+    // --- 7. AI 核心 (GitHub Models) ---
     public class LLM
     {
         private static string GitHubModelKey => Environment.GetEnvironmentVariable("GITHUB_MODEL_KEY") ?? "";
-
         public static async Task<string> getResponseWithHistoryAsync(List<dynamic> history, string searchContext)
         {
             if (string.IsNullOrEmpty(GitHubModelKey)) return "錯誤：API 金鑰未設定。";
-
             var messages = new List<dynamic>();
-            messages.Add(new {
-                role = "system",
-                content = $@"你是一位溫暖的華德福導師。現在時間 {DateTime.Now:yyyy/MM/dd HH:mm}。
-請結合搜尋結果與先前的對話脈絡回答。
-
-【搜尋參考數據】：
-{searchContext}"
-            });
-
+            string systemPrompt = "你是一位溫暖的華德福導師。請結合對話脈絡回答。";
+            if (!string.IsNullOrEmpty(searchContext)) systemPrompt += $"\n\n【最新搜尋參考數據】：\n{searchContext}";
+            
+            messages.Add(new { role = "system", content = systemPrompt });
             messages.AddRange(history);
 
-            var MessageBody = new { model = "gpt-4o", messages = messages };
-
-            using (var client = new HttpClient())
-            {
+            using (var client = new HttpClient()) {
                 client.DefaultRequestHeaders.Add("Authorization", $"Bearer {GitHubModelKey}");
                 client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 client.DefaultRequestHeaders.Add("User-Agent", "DotNetApp");
-
-                var content = new StringContent(JsonConvert.SerializeObject(MessageBody), Encoding.UTF8, "application/json");
+                var content = new StringContent(JsonConvert.SerializeObject(new { model = "gpt-4o", messages = messages }), Encoding.UTF8, "application/json");
                 var response = await client.PostAsync("https://models.github.ai/inference/chat/completions", content);
-
                 if (!response.IsSuccessStatusCode) return "AI 正在森林裡散步，請稍後再試。";
-
-                var resultString = await response.Content.ReadAsStringAsync();
-                var obj = JsonConvert.DeserializeObject<dynamic>(resultString);
+                var obj = JsonConvert.DeserializeObject<dynamic>(await response.Content.ReadAsStringAsync());
                 return obj.choices[0].message.content.Value;
             }
         }
