@@ -22,6 +22,7 @@ namespace isRock.Template
         private static DateTime GetNextResetTime()
         {
             DateTime now = DateTime.Now;
+            // 設定為每日 08:00 重置
             DateTime today8AM = new DateTime(now.Year, now.Month, now.Day, 8, 0, 0);
             return now < today8AM ? today8AM : today8AM.AddDays(1);
         }
@@ -90,11 +91,16 @@ namespace isRock.Template
     // --- 4. 主程式控制器 ---
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
-        // 支援 Better Stack 監控，不消耗任何 API 次數
+        // ---------------------------------------------------------
+        // 補回：支援 Better Stack 監控 (GET & HEAD)
+        // ---------------------------------------------------------
         [HttpHead]
         [HttpGet]
         [Route("api/LineBotOpenAIWebHook")]
-        public IActionResult Get() => Ok("Bot is Alive!");
+        public IActionResult Get()
+        {
+            return Ok("Bot is Alive!");
+        }
 
         [Route("api/LineBotOpenAIWebHook")]
         [HttpPost]
@@ -102,7 +108,9 @@ namespace isRock.Template
         {
             try
             {
+                // LINE 頻道 Token
                 this.ChannelAccessToken = "+TMqgSuSc5xQ3exc9raMYDXo+TMC6wDV7JrtcmZ0fxWWnWotHZt9zdFpciHI8nrV4lUqjXmbJgNpxvlcQx6axHyJYJevUP2tRSWfIjItxlgqrSXz1+YJjAJuT2IxedI+EiifbH4MPQLxxTDlmWE1pQdB04t89/1O/w1cDnyilFU=";
+                
                 var LineEvent = this.ReceivedMessage?.events?.FirstOrDefault();
                 if (LineEvent == null || LineEvent.replyToken == "00000000000000000000000000000000") return Ok();
 
@@ -113,6 +121,7 @@ namespace isRock.Template
 
                     if (LineEvent.source.type.ToLower() == "user" || (LineEvent.message.mention?.mentionees?.Any(m => m.isSelf == true) ?? false))
                     {
+                        // A. 檢查次數限制
                         bool isOverLimit;
                         int currentCount = UsageManager.GetAndIncrementCount(out isOverLimit);
                         if (isOverLimit) {
@@ -120,7 +129,7 @@ namespace isRock.Template
                             return Ok();
                         }
 
-                        // --- 方案 A：智慧判定是否需要搜尋 ---
+                        // --- 智慧判斷：是否需要發動搜尋以節省點數 ---
                         string searchResults = "";
                         string[] searchKeywords = { "今天", "現在", "幾點", "日期", "時間", "什麼時候", "天氣", "氣溫", "新聞", "2025", "2026", "哪裡有", "地址", "多少錢", "推薦", "活動" };
                         bool needsSearch = searchKeywords.Any(k => userMsg.Contains(k));
@@ -137,11 +146,17 @@ namespace isRock.Template
                             Console.WriteLine($">>> [省錢模式] 識別為一般對話，跳過 Serper 搜尋。內容: {userMsg}");
                         }
 
+                        // C. 處理對話歷史：加入使用者訊息
                         ChatHistoryManager.AddMessage(userId, "user", userMsg);
+
+                        // D. 呼叫 AI 模型
                         var userHistory = ChatHistoryManager.GetHistory(userId);
                         string responseMsg = await LLM.getResponseWithHistoryAsync(userHistory, searchResults);
+
+                        // E. 處理對話歷史：加入 AI 回覆
                         ChatHistoryManager.AddMessage(userId, "assistant", responseMsg);
 
+                        // F. 回覆最終訊息
                         string finalMsg = $@"{responseMsg}
 
 ---
@@ -152,13 +167,13 @@ namespace isRock.Template
                 return Ok();
             }
             catch (Exception ex) {
-                Console.WriteLine($">>> [錯誤]: {ex.Message}");
+                Console.WriteLine($">>> [系統錯誤]: {ex.Message}");
                 return Ok();
             }
         }
     }
 
-    // --- 5. 搜尋服務 (Serper.dev) ---
+    // --- 5. 專業搜尋服務 (Serper.dev) ---
     public class SerperSearchService
     {
         private const string SerperApiKey = "82153d7f3577fc91edf635839630e669623360e3";
@@ -168,10 +183,12 @@ namespace isRock.Template
             try {
                 using (var client = new HttpClient()) {
                     client.DefaultRequestHeaders.Add("X-API-KEY", SerperApiKey);
-                    var content = new StringContent(JsonConvert.SerializeObject(new { q = query, gl = "tw", hl = "zh-tw" }), Encoding.UTF8, "application/json");
+                    var payload = new { q = query, gl = "tw", hl = "zh-tw" };
+                    var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
                     var response = await client.PostAsync("https://google.serper.dev/search", content);
                     var json = await response.Content.ReadAsStringAsync();
                     var data = JsonConvert.DeserializeObject<dynamic>(json);
+                    
                     StringBuilder sb = new StringBuilder();
                     if (data.answerBox != null) sb.AppendLine($"[精選答案]: {data.answerBox.answer ?? data.answerBox.snippet}");
                     if (data.organic != null) {
@@ -210,9 +227,10 @@ namespace isRock.Template
         private static string GitHubModelKey => Environment.GetEnvironmentVariable("GITHUB_MODEL_KEY") ?? "";
         public static async Task<string> getResponseWithHistoryAsync(List<dynamic> history, string searchContext)
         {
-            if (string.IsNullOrEmpty(GitHubModelKey)) return "錯誤：API 金鑰未設定。";
+            if (string.IsNullOrEmpty(GitHubModelKey)) return "錯誤：AI API 金鑰未設定。";
+            
             var messages = new List<dynamic>();
-            string systemPrompt = "你是一位溫暖的華德福導師。請結合對話脈絡回答。";
+            string systemPrompt = "你是一位溫暖的華德福導師。請結合對話脈絡並用溫柔語氣回答問題。";
             if (!string.IsNullOrEmpty(searchContext)) systemPrompt += $"\n\n【最新搜尋參考數據】：\n{searchContext}";
             
             messages.Add(new { role = "system", content = systemPrompt });
