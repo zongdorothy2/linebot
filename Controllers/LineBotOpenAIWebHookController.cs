@@ -55,14 +55,17 @@ namespace isRock.Template
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
         // ---------------------------------------------------------
-        // 新增：這段讓監控工具 (GET) 能成功連線，回傳 200 OK
         // ---------------------------------------------------------
-        [HttpGet]
-        [Route("api/LineBotOpenAIWebHook")]
-        public IActionResult Get()
-        {
-            return Ok("Bot is Alive!");
-        }
+// 修改後：同時支援 HEAD 與 GET，徹底解決監控工具的 405 錯誤
+// ---------------------------------------------------------
+[HttpHead] // 新增這行，專門應對監控工具的偵測
+[HttpGet]
+[Route("api/LineBotOpenAIWebHook")]
+public IActionResult Get()
+{
+    // 當監控工具用 HEAD 請求時，它只會接收到 200 OK，不會抓取 Body 內容，節省流量
+    return Ok("Bot is Alive!");
+}
 
         [Route("api/LineBotOpenAIWebHook")]
         [HttpPost]
