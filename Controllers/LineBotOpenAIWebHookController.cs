@@ -1,251 +1,411 @@
 using System;
+
 using System.Collections.Generic;
+
 using System.Collections.Concurrent;
+
 using System.Linq;
+
 using System.Net.Http;
+
 using System.Net.Http.Headers;
+
 using System.Text;
-using System.Text.RegularExpressions;
+
 using System.Threading.Tasks;
+
 using Microsoft.AspNetCore.Mvc;
+
 using Newtonsoft.Json;
 
+
+
 namespace isRock.Template
+
 {
-    // --- 1. 使用量管理員 (每日 50 次互動限制) ---
+
+    // --- 1. 使用量管理員 (每日 500 次，15:00 重置) ---
+
     public static class UsageManager
+
     {
+
         private static int _todayCount = 0;
+
         private static DateTime _nextResetTime = GetNextResetTime();
+
         private static readonly object _lock = new object();
 
+
+
         private static DateTime GetNextResetTime()
+
         {
-            DateTime now = DateTime.Now;
-            // 設定為每日 08:00 重置
-            DateTime today8AM = new DateTime(now.Year, now.Month, now.Day, 8, 0, 0);
-            return now < today8AM ? today8AM : today8AM.AddDays(1);
+
+            DateTime now = DateTime.UtcNow.AddHours(8); 
+
+            DateTime resetToday = new DateTime(now.Year, now.Month, now.Day, 15, 0, 0);
+
+            return now < resetToday ? resetToday : resetToday.AddDays(1);
+
         }
+
+
 
         public static int GetAndIncrementCount(out bool isOverLimit)
+
         {
+
             lock (_lock)
+
             {
-                if (DateTime.Now >= _nextResetTime)
+
+                if (DateTime.UtcNow.AddHours(8) >= _nextResetTime)
+
                 {
+
                     _todayCount = 0;
+
                     _nextResetTime = GetNextResetTime();
+
                 }
-                isOverLimit = _todayCount >= 50;
+
+                isOverLimit = _todayCount >= 500;
+
                 if (!isOverLimit) _todayCount++;
+
                 return _todayCount;
+
             }
+
         }
+
     }
 
-    // --- 2. 對話歷史管理員 (記憶最近 10 則對話) ---
-    public static class ChatHistoryManager
-    {
-        private static readonly ConcurrentDictionary<string, List<dynamic>> _history = new ConcurrentDictionary<string, List<dynamic>>();
-        private const int MaxHistory = 10; 
 
-        public static List<dynamic> GetHistory(string userId)
+
+    // --- 2. 對話歷史管理員 (記憶 5 輪) ---
+
+    public static class ChatHistoryManager
+
+    {
+
+        private static readonly ConcurrentDictionary<string, List<object>> _history = new ConcurrentDictionary<string, List<object>>();
+
+        private const int MaxHistory = 5; 
+
+
+
+        public static List<object> GetHistory(string userId)
+
         {
-            return _history.GetOrAdd(userId, new List<dynamic>());
+
+            return _history.GetOrAdd(userId, _ => new List<object>());
+
         }
+
+
 
         public static void AddMessage(string userId, string role, string content)
+
         {
+
             var userHistory = GetHistory(userId);
-            userHistory.Add(new { role = role, content = content });
-            if (userHistory.Count > MaxHistory) userHistory.RemoveAt(0);
+
+            string geminiRole = role.ToLower() == "assistant" ? "model" : "user";
+
+            userHistory.Add(new { role = geminiRole, parts = new[] { new { text = content } } });
+
+            if (userHistory.Count > (MaxHistory * 2)) userHistory.RemoveAt(0);
+
         }
+
     }
 
-    // --- 3. 搜尋快取管理員 (節省重複搜尋點數) ---
+
+
+    // --- 3. 搜尋快取管理員 (30 分鐘) ---
+
     public static class SearchCacheManager
+
     {
-        private class CacheEntry {
-            public string Result { get; set; }
-            public DateTime ExpireTime { get; set; }
-        }
+
+        private class CacheEntry { public string Result { get; set; } public DateTime ExpireTime { get; set; } }
+
         private static readonly ConcurrentDictionary<string, CacheEntry> _searchCache = new ConcurrentDictionary<string, CacheEntry>();
-        private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
+
+
 
         public static bool TryGetCache(string query, out string result)
+
         {
+
             if (_searchCache.TryGetValue(query, out var entry))
+
             {
+
                 if (DateTime.Now < entry.ExpireTime) { result = entry.Result; return true; }
+
                 _searchCache.TryRemove(query, out _);
+
             }
+
             result = null; return false;
+
         }
+
+
 
         public static void SetCache(string query, string result)
+
         {
-            _searchCache[query] = new CacheEntry { Result = result, ExpireTime = DateTime.Now.Add(CacheDuration) };
+
+            _searchCache[query] = new CacheEntry { Result = result, ExpireTime = DateTime.Now.AddMinutes(30) };
+
         }
+
     }
 
-    // --- 4. 主程式控制器 ---
-    public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
-    {
-        // ---------------------------------------------------------
-        // 補回：支援 Better Stack 監控 (GET & HEAD)
-        // ---------------------------------------------------------
-        [HttpHead]
-        [HttpGet]
-        [Route("api/LineBotOpenAIWebHook")]
-        public IActionResult Get()
-        {
-            return Ok("Bot is Alive!");
-        }
 
-        [Route("api/LineBotOpenAIWebHook")]
-        [HttpPost]
-        public async Task<IActionResult> POST()
+
+    // --- 4. 動畫管理員 (控制 LINE Loading 三個點動畫) ---
+
+    public static class LoadingAnimationManager
+
+    {
+
+        public static async Task StartLoadingAsync(string accessToken, string chatId, int seconds = 20)
+
         {
+
+            if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(chatId)) return;
+
+
+
+            string url = "https://api.line.me/v2/bot/chat/loading/start";
+
+            var requestBody = new { chatId = chatId, loadingSeconds = seconds };
+
+
+
             try
+
             {
-                // LINE 頻道 Token
-                this.ChannelAccessToken = "+TMqgSuSc5xQ3exc9raMYDXo+TMC6wDV7JrtcmZ0fxWWnWotHZt9zdFpciHI8nrV4lUqjXmbJgNpxvlcQx6axHyJYJevUP2tRSWfIjItxlgqrSXz1+YJjAJuT2IxedI+EiifbH4MPQLxxTDlmWE1pQdB04t89/1O/w1cDnyilFU=";
-                
-                var LineEvent = this.ReceivedMessage?.events?.FirstOrDefault();
-                if (LineEvent == null || LineEvent.replyToken == "00000000000000000000000000000000") return Ok();
 
-                if (LineEvent.type.ToLower() == "message" && LineEvent.message.type == "text")
+                using var client = new HttpClient();
+
+                // 必須正確帶入 Bearer Token
+
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+                var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
+
+                await client.PostAsync(url, content);
+
+            }
+
+            catch (Exception ex)
+
+            {
+
+                Console.WriteLine($"Loading Animation Error: {ex.Message}");
+
+            }
+
+        }
+
+    }
+
+
+
+    // --- 5. Gemini 服務 (Token 統計 + 台灣時間) ---
+
+    public static class GeminiLLM
+
+    {
+
+        private static string ApiKey => Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
+
+        private const string ModelName = "gemini-3.1-flash-lite-preview";
+
+
+
+        public static async Task<(string text, int tokens)> GetResponseAsync(string userId, string userQuery)
+
+        {
+
+            if (SearchCacheManager.TryGetCache(userQuery, out string cachedResult))
+
+                return (cachedResult, 0);
+
+
+
+            string url = $"https://generativelanguage.googleapis.com/v1beta/models/{ModelName}:generateContent?key={ApiKey}";
+
+            string currentTimeInfo = DateTime.UtcNow.AddHours(8).ToString("yyyy/MM/dd dddd HH:mm");
+
+
+
+            var requestBody = new {
+
+                contents = ChatHistoryManager.GetHistory(userId),
+
+                systemInstruction = new { 
+
+                    parts = new[] { new { 
+
+                        text = $"你是一位資深的教育人員。現在是台灣時間 {currentTimeInfo}。請用溫柔而堅定的語氣與使用者對話。" 
+
+                    } } 
+
+                },
+
+                generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
+
+            };
+
+
+
+            try 
+
+            {
+
+                using var client = new HttpClient();
+
+                var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
+
+                var response = await client.PostAsync(url, content);
+
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+
+
+
+                if (!response.IsSuccessStatusCode) return ("導師正在沉思，請稍後再試。", 0);
+
+
+
+                dynamic? result = JsonConvert.DeserializeObject(jsonResponse);
+
+                string textResult = result?.candidates?[0]?.content?.parts?[0]?.text ?? "我看見了光。";
+
+                int totalTokens = result?.usageMetadata?.totalTokenCount ?? 0;
+
+
+
+                SearchCacheManager.SetCache(userQuery, textResult);
+
+                return (textResult, totalTokens);
+
+            }
+
+            catch (Exception) { return ("導師暫時切斷了與外界的聯繫。", 0); }
+
+        }
+
+    }
+
+// --- 5.5 新增：GAS 試算表檢索服務 ---
+public static class GASSheetService
+{
+    private static string GasUrl => Environment.GetEnvironmentVariable("GAS_WEBAPP_URL") ?? "";
+
+    public static async Task<string?> GetKnowledgeBaseResponseAsync(string userQuery)
+    {
+        if (string.IsNullOrEmpty(GasUrl)) return null;
+
+        try
+        {
+            using var client = new HttpClient();
+            // 將問題作為參數傳送給 GAS
+            var requestBody = new { action = "search", query = userQuery };
+            var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
+            
+            var response = await client.PostAsync(GasUrl, content);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var jsonResponse = await response.Content.ReadAsStringAsync();
+            dynamic? result = JsonConvert.DeserializeObject(jsonResponse);
+
+            // 假設 GAS 找到匹配時回傳 { "status": "success", "answer": "..." }
+            // 若找不到匹配回傳 { "status": "not_found" }
+            if (result?.status == "success")
+            {
+                return (string)result.answer;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"GAS Error: {ex.Message}");
+        }
+        return null;
+    }
+}
+
+// --- 6. LINE WebHook 控制器 (修改邏輯) ---
+public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
+{
+    // ... 前段 [HttpGet] 等維持不變 ...
+
+    [Route("api/LineBotOpenAIWebHook")]
+    [HttpPost]
+    public async Task<IActionResult> POST()
+    {
+        try
+        {
+            this.ChannelAccessToken = Environment.GetEnvironmentVariable("LINE_CHANNEL_TOKEN");
+            var lineEvent = this.ReceivedMessage?.events?.FirstOrDefault();
+            if (lineEvent == null || string.IsNullOrEmpty(lineEvent.replyToken)) return Ok();
+
+            if (lineEvent.type.ToLower() == "message" && lineEvent.message.type == "text")
+            {
+                string userId = lineEvent.source.userId;
+                string userText = lineEvent.message.text;
+
+                // 步驟 A: 檢查配額
+                int currentCount = UsageManager.GetAndIncrementCount(out bool isOverLimit);
+                if (isOverLimit) {
+                    this.ReplyMessage(lineEvent.replyToken, "🌟 今日配額已滿。");
+                    return Ok();
+                }
+
+                // 步驟 B: 啟動動畫 (非阻塞)
+                _ = LoadingAnimationManager.StartLoadingAsync(this.ChannelAccessToken, userId);
+
+                string finalResponse;
+                string sourceTag = "";
+
+                // 步驟 C: 【新增】優先嘗試從 GAS 試算表獲取資料
+                string? gasAnswer = await GASSheetService.GetKnowledgeBaseResponseAsync(userText);
+
+                if (!string.IsNullOrEmpty(gasAnswer))
                 {
-                    string userId = LineEvent.source.userId;
-                    string userMsg = LineEvent.message.text;
-
-                    if (LineEvent.source.type.ToLower() == "user" || (LineEvent.message.mention?.mentionees?.Any(m => m.isSelf == true) ?? false))
-                    {
-                        // A. 檢查次數限制
-                        bool isOverLimit;
-                        int currentCount = UsageManager.GetAndIncrementCount(out isOverLimit);
-                        if (isOverLimit) {
-                            this.ReplyMessage(LineEvent.replyToken, "🌟 今日互動額度已滿，明早 8 點見。");
-                            return Ok();
-                        }
-
-                        // --- 智慧判斷：是否需要發動搜尋以節省點數 ---
-                        string searchResults = "";
-                        string[] searchKeywords = { "今天", "現在", "幾點", "日期", "時間", "什麼時候", "天氣", "氣溫", "新聞", "2025", "2026", "哪裡有", "地址", "多少錢", "推薦", "活動" };
-                        bool needsSearch = searchKeywords.Any(k => userMsg.Contains(k));
-
-                        if (needsSearch)
-                        {
-                            if (userMsg.Contains("天氣") || userMsg.Contains("氣溫"))
-                                searchResults = await KeylessSearchService.GetWeatherInfoAsync(userMsg);
-                            else
-                                searchResults = await SerperSearchService.GoogleSearchWithCacheAsync(userMsg);
-                        }
-                        else
-                        {
-                            Console.WriteLine($">>> [省錢模式] 識別為一般對話，跳過 Serper 搜尋。內容: {userMsg}");
-                        }
-
-                        // C. 處理對話歷史：加入使用者訊息
-                        ChatHistoryManager.AddMessage(userId, "user", userMsg);
-
-                        // D. 呼叫 AI 模型
-                        var userHistory = ChatHistoryManager.GetHistory(userId);
-                        string responseMsg = await LLM.getResponseWithHistoryAsync(userHistory, searchResults);
-
-                        // E. 處理對話歷史：加入 AI 回覆
-                        ChatHistoryManager.AddMessage(userId, "assistant", responseMsg);
-
-                        // F. 回覆最終訊息
-                        string finalMsg = $@"{responseMsg}
-
----
-### 今日互動紀錄：第 {currentCount} 次";
-                        this.ReplyMessage(LineEvent.replyToken, finalMsg);
-                    }
+                    // 命中試算表關鍵字
+                    finalResponse = gasAnswer;
+                    sourceTag = "（內建回答）";
                 }
-                return Ok();
-            }
-            catch (Exception ex) {
-                Console.WriteLine($">>> [系統錯誤]: {ex.Message}");
-                return Ok();
-            }
-        }
-    }
-
-    // --- 5. 專業搜尋服務 (Serper.dev) ---
-    public class SerperSearchService
-    {
-        private const string SerperApiKey = "82153d7f3577fc91edf635839630e669623360e3";
-        public static async Task<string> GoogleSearchWithCacheAsync(string query)
-        {
-            if (SearchCacheManager.TryGetCache(query, out string cachedResult)) return cachedResult;
-            try {
-                using (var client = new HttpClient()) {
-                    client.DefaultRequestHeaders.Add("X-API-KEY", SerperApiKey);
-                    var payload = new { q = query, gl = "tw", hl = "zh-tw" };
-                    var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-                    var response = await client.PostAsync("https://google.serper.dev/search", content);
-                    var json = await response.Content.ReadAsStringAsync();
-                    var data = JsonConvert.DeserializeObject<dynamic>(json);
+                else
+                {
+                    // 步驟 D: 試算表沒找到，才呼叫 Gemini AI
+                    ChatHistoryManager.AddMessage(userId, "user", userText);
+                    var (aiMsg, totalTokens) = await GeminiLLM.GetResponseAsync(userId, userText);
+                    ChatHistoryManager.AddMessage(userId, "assistant", aiMsg);
                     
-                    StringBuilder sb = new StringBuilder();
-                    if (data.answerBox != null) sb.AppendLine($"[精選答案]: {data.answerBox.answer ?? data.answerBox.snippet}");
-                    if (data.organic != null) {
-                        foreach (var item in ((IEnumerable<dynamic>)data.organic).Take(3)) 
-                            sb.AppendLine($"- {item.title}: {item.snippet}");
-                    }
-                    string result = sb.Length > 0 ? sb.ToString() : "目前查無即時資訊";
-                    SearchCacheManager.SetCache(query, result);
-                    return result;
+                    finalResponse = aiMsg;
+                    sourceTag = totalTokens > 0 ? $"總計消耗：{totalTokens} tokens" : "（來自快取）";
                 }
-            } catch { return "搜尋連線失敗"; }
-        }
-    }
 
-    // --- 6. 天氣服務 ---
-    public class KeylessSearchService
-    {
-        public static async Task<string> GetWeatherInfoAsync(string query)
-        {
-            try {
-                string lat = query.Contains("台東") ? "22.75" : "25.03";
-                string lon = query.Contains("台東") ? "121.15" : "121.56";
-                string url = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&timezone=Asia%2FTaipei";
-                using (var client = new HttpClient()) {
-                    var json = await client.GetStringAsync(url);
-                    var data = JsonConvert.DeserializeObject<dynamic>(json);
-                    return $"[即時氣象] 氣溫: {data.current_weather.temperature}°C";
-                }
-            } catch { return "天氣數據暫時無法取得"; }
-        }
-    }
-
-    // --- 7. AI 核心 (GitHub Models) ---
-    public class LLM
-    {
-        private static string GitHubModelKey => Environment.GetEnvironmentVariable("GITHUB_MODEL_KEY") ?? "";
-        public static async Task<string> getResponseWithHistoryAsync(List<dynamic> history, string searchContext)
-        {
-            if (string.IsNullOrEmpty(GitHubModelKey)) return "錯誤：AI API 金鑰未設定。";
-            
-            var messages = new List<dynamic>();
-            string systemPrompt = "你是一位溫暖的華德福導師。請結合對話脈絡並用溫柔語氣回答問題。";
-            if (!string.IsNullOrEmpty(searchContext)) systemPrompt += $"\n\n【最新搜尋參考數據】：\n{searchContext}";
-            
-            messages.Add(new { role = "system", content = systemPrompt });
-            messages.AddRange(history);
-
-            using (var client = new HttpClient()) {
-                client.DefaultRequestHeaders.Add("Authorization", $"Bearer {GitHubModelKey}");
-                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                client.DefaultRequestHeaders.Add("User-Agent", "DotNetApp");
-                var content = new StringContent(JsonConvert.SerializeObject(new { model = "gpt-4o", messages = messages }), Encoding.UTF8, "application/json");
-                var response = await client.PostAsync("https://models.github.ai/inference/chat/completions", content);
-                if (!response.IsSuccessStatusCode) return "AI 正在森林裡散步，請稍後再試。";
-                var obj = JsonConvert.DeserializeObject<dynamic>(await response.Content.ReadAsStringAsync());
-                return obj.choices[0].message.content.Value;
+                // 步驟 E: 組合回覆
+                string finalReply = $"{finalResponse}\n\n次數：{currentCount}/500\n來源：{sourceTag}";
+                this.ReplyMessage(lineEvent.replyToken, finalReply);
             }
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.ToString());
+            return Ok();
         }
     }
+}
+
 }
