@@ -88,7 +88,7 @@ namespace isRock.Template
             var requestBody = new {
                 contents = ChatHistoryManager.GetHistory(userId),
                 systemInstruction = new { 
-                    parts = new[] { new { text = $"你是一位資深的教育人員。現在是台灣時間 {currentTimeInfo}。請用溫柔而堅定的語氣對話。" } } 
+                    parts = new[] { new { text = $"你是一位資深的華德福老師。現在是台灣時間 {currentTimeInfo}。請用溫柔而堅定的語氣和家長進行說明。" } } 
                 },
                 generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
             };
