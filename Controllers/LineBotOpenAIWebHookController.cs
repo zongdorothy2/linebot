@@ -140,15 +140,19 @@ namespace isRock.Template
     // --- 6. LINE WebHook 控制器 ---
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
-        [HttpHead]
-        [HttpGet]
-        [Route("api/LineBotOpenAIWebHook")]
-        public IActionResult Get()
-        {
-            return Ok("Bot is Alive!");
-        }
+    [HttpHead]
+    [HttpGet]
+    [Route("api/LineBotOpenAIWebHook")]
+    public IActionResult Get()
+    {
+        // 這樣你在瀏覽器點網址時，就會看到這行字，代表活著
+        return Ok("Bot is Alive! (Get Success)");
+    }
 
-        public async Task<IActionResult> POST()
+    // 重點：必須補上這兩行標籤
+    [HttpPost]
+    [Route("api/LineBotOpenAIWebHook")]
+    public async Task<IActionResult> POST()
         {
             try
             {
