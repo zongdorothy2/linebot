@@ -183,7 +183,9 @@ namespace isRock.Template
                         finalResponse = $"{aiRawAnswer}\n\n（以上是Gemini AI協助回覆）";
                         _ = GASSheetService.LogAiResponseAsync(userId, userText, aiRawAnswer);
                     }
-               
+
+                    // D. 組合回覆：在最後附上用戶 ID 以便識別
+                    string finalReplyWithId = $"{finalResponse}\n\n用戶ID：{userId}";
                     this.ReplyMessage(lineEvent.replyToken, finalReplyWithId);
                 }
                 return Ok();
