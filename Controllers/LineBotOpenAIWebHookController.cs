@@ -11,7 +11,7 @@ using Newtonsoft.Json;
 
 namespace isRock.Template
 {
-    // --- 1. 對話歷史管理員 ---
+    // --- 1. 對話歷史管理員 (記憶 5 輪) ---
     public static class ChatHistoryManager
     {
         private static readonly ConcurrentDictionary<string, List<object>> _history = new ConcurrentDictionary<string, List<object>>();
@@ -31,7 +31,7 @@ namespace isRock.Template
         }
     }
 
-    // --- 2. 搜尋快取管理員 ---
+    // --- 2. 搜尋快取管理員 (30 分鐘) ---
     public static class SearchCacheManager
     {
         private class CacheEntry { public string Result { get; set; } public DateTime ExpireTime { get; set; } }
@@ -53,7 +53,7 @@ namespace isRock.Template
         }
     }
 
-    // --- 3. 動畫管理員 ---
+    // --- 3. 動畫管理員 (LINE Loading 三個點) ---
     public static class LoadingAnimationManager
     {
         public static async Task StartLoadingAsync(string accessToken, string chatId, int seconds = 20)
@@ -72,7 +72,7 @@ namespace isRock.Template
         }
     }
 
-    // --- 4. Gemini 服務 (簡化 Token 處理) ---
+    // --- 4. Gemini 服務 (華德福老師人設) ---
     public static class GeminiLLM
     {
         private static string ApiKey => Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
@@ -112,60 +112,48 @@ namespace isRock.Template
         }
     }
 
-    // --- 5. GAS 試算表檢索服務 ---
+    // --- 5. GAS 試算表服務 (搜尋 + 身份紀錄) ---
     public static class GASSheetService
-{
-    private static string GasUrl => Environment.GetEnvironmentVariable("GAS_WEBAPP_URL") ?? "";
-
-    // 1. 原有的搜尋功能
-    public static async Task<string?> GetKnowledgeBaseResponseAsync(string userQuery)
     {
-        if (string.IsNullOrEmpty(GasUrl)) return null;
-        try {
-            using var client = new HttpClient();
-            var requestBody = new { action = "search", query = userQuery };
-            var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
-            var response = await client.PostAsync(GasUrl, content);
-            if (!response.IsSuccessStatusCode) return null;
-            var jsonResponse = await response.Content.ReadAsStringAsync();
-            dynamic? result = JsonConvert.DeserializeObject(jsonResponse);
-            if (result?.status == "success") return (string)result.answer;
-        } catch { }
-        return null;
-    }
+        private static string GasUrl => Environment.GetEnvironmentVariable("GAS_WEBAPP_URL") ?? "";
 
-    // 2. 新增：非同步紀錄 AI 回覆功能 (Fire-and-Forget)
-    public static async Task LogAiResponseAsync(string userQuery, string aiAnswer)
-    {
-        if (string.IsNullOrEmpty(GasUrl)) return;
-        try {
-            using var client = new HttpClient();
-            var requestBody = new { action = "log", query = userQuery, answer = aiAnswer };
-            var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
-            // 直接發送，不特別等待結果回傳，以節省資源
-            await client.PostAsync(GasUrl, content);
-        } catch (Exception ex) {
-            Console.WriteLine($"Log Error: {ex.Message}");
+        public static async Task<string?> GetKnowledgeBaseResponseAsync(string userQuery)
+        {
+            if (string.IsNullOrEmpty(GasUrl)) return null;
+            try {
+                using var client = new HttpClient();
+                var requestBody = new { action = "search", query = userQuery };
+                var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
+                var response = await client.PostAsync(GasUrl, content);
+                if (!response.IsSuccessStatusCode) return null;
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                dynamic? result = JsonConvert.DeserializeObject(jsonResponse);
+                if (result?.status == "success") return (string)result.answer;
+            } catch { }
+            return null;
+        }
+
+        public static async Task LogAiResponseAsync(string userId, string userQuery, string aiAnswer)
+        {
+            if (string.IsNullOrEmpty(GasUrl)) return;
+            try {
+                using var client = new HttpClient();
+                var requestBody = new { action = "log", userId = userId, query = userQuery, answer = aiAnswer };
+                var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
+                // 背景發送紀錄，不阻塞主流程
+                await client.PostAsync(GasUrl, content);
+            } catch (Exception ex) { Console.WriteLine($"Log Error: {ex.Message}"); }
         }
     }
-}
 
     // --- 6. LINE WebHook 控制器 ---
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
-    [HttpHead]
-    [HttpGet]
-    [Route("api/LineBotOpenAIWebHook")]
-    public IActionResult Get()
-    {
-        // 這樣你在瀏覽器點網址時，就會看到這行字，代表活著
-        return Ok("Bot is Alive! (Get Success)");
-    }
+        [HttpHead] [HttpGet] [Route("api/LineBotOpenAIWebHook")]
+        public IActionResult Get() => Ok("Bot is Alive! (V2.1 Success)");
 
-    // 重點：必須補上這兩行標籤
-    [HttpPost]
-    [Route("api/LineBotOpenAIWebHook")]
-    public async Task<IActionResult> POST()
+        [HttpPost] [Route("api/LineBotOpenAIWebHook")]
+        public async Task<IActionResult> POST()
         {
             try
             {
@@ -178,37 +166,29 @@ namespace isRock.Template
                     string userId = lineEvent.source.userId;
                     string userText = lineEvent.message.text;
 
-                    // 步驟 A: 啟動動畫 (非阻塞)
+                    // A. 啟動動畫
                     _ = LoadingAnimationManager.StartLoadingAsync(this.ChannelAccessToken, userId);
 
-                    // 步驟 B: 優先從 GAS 獲取答案
-                    // 步驟 B: 優先從 GAS 獲取標準答案
-string? finalResponse = await GASSheetService.GetKnowledgeBaseResponseAsync(userText);
+                    // B. 優先搜尋 GAS 標準答案
+                    string? finalResponse = await GASSheetService.GetKnowledgeBaseResponseAsync(userText);
 
-if (string.IsNullOrEmpty(finalResponse))
-{
-    // 步驟 C: 進入 Ai 模式
-    ChatHistoryManager.AddMessage(userId, "user", userText);
-    string aiRawAnswer = await GeminiLLM.GetResponseAsync(userId, userText);
-    ChatHistoryManager.AddMessage(userId, "assistant", aiRawAnswer);
+                    if (string.IsNullOrEmpty(finalResponse))
+                    {
+                        // C. 沒對中關鍵字，進入 AI 模式
+                        ChatHistoryManager.AddMessage(userId, "user", userText);
+                        string aiRawAnswer = await GeminiLLM.GetResponseAsync(userId, userText);
+                        ChatHistoryManager.AddMessage(userId, "assistant", aiRawAnswer);
 
-    // 1. 在回覆最後加註聲明
-    finalResponse = $"{aiRawAnswer}\n\n（以上是Gemini AI協助回覆）";
-
-    // 2. 將原始問題與 AI 答案傳回 GAS 紀錄 (背景執行，不讓使用者等)
-    _ = GASSheetService.LogAiResponseAsync(userText, aiRawAnswer);
-}
-
-// 步驟 D: 回覆
-this.ReplyMessage(lineEvent.replyToken, finalResponse);
+                        // 加註聲明並背景紀錄 Log (含 UserID)
+                        finalResponse = $"{aiRawAnswer}\n\n（以上是Gemini AI協助回覆）";
+                        _ = GASSheetService.LogAiResponseAsync(userId, userText, aiRawAnswer);
+                    }
+               
+                    this.ReplyMessage(lineEvent.replyToken, finalReplyWithId);
                 }
                 return Ok();
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.ToString());
-                return Ok();
-            }
+            catch (Exception ex) { Console.WriteLine(ex.ToString()); return Ok(); }
         }
     }
 }
