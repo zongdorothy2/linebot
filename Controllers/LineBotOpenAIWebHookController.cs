@@ -184,10 +184,8 @@ namespace isRock.Template
                         _ = GASSheetService.LogAiResponseAsync(userId, userText, aiRawAnswer);
                     }
 
-                    // D. 組合回覆：在最後附上用戶 ID 以便識別
-                    string finalReplyWithId = $"{finalResponse}\n\n用戶ID：{userId}";
-                    this.ReplyMessage(lineEvent.replyToken, finalReplyWithId);
-                }
+                    // 【修改處】：移除組合 ID 的程式碼，直接回覆 finalResponse
+                    this.ReplyMessage(lineEvent.replyToken, finalResponse);
                 return Ok();
             }
             catch (Exception ex) { Console.WriteLine(ex.ToString()); return Ok(); }
