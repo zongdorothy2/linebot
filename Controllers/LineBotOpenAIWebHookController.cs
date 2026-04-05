@@ -1,6 +1,3 @@
-記錄下LINE Bot GAS 整合 Gemini 2.2版（客服機器人含監控儀表板）
-https://linebot-b09v.onrender.com/admin/monitor
-語法如下：
 using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
