@@ -53,129 +53,53 @@ namespace isRock.Template
     {
         [HttpGet] [Route("admin/monitor")]
 public IActionResult Index()
-{
-    var data = MonitorService.GetSnapshot();
-    
-    // 重新設計的專業版 HTML
-    string html = $@"
-    <!DOCTYPE html>
-    <html lang='zh-TW'>
-    <head>
-        <title>均一國小部客服 Bot 監控後台</title>
-        <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'>
-        <meta http-equiv='refresh' content='30'>
-        <style>
-            body {{ font-family: 'Microsoft JhengHei', sans-serif; background-color: #f0f2f5; }}
-            .metric-card {{ border: none; border-top: 5px solid; transition: transform 0.2s; }}
-            .metric-card:hover {{ transform: translateY(-5px); }}
-        </table style>
-    </head>
-    <body>
-        <div class='container py-5'>
-            <div class='card shadow-sm border-0 rounded-4 overflow-hidden'>
-                <div class='card-header bg-white border-0 p-4'>
-                    <div class='d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3'>
-                        <div>
-                            <h2 class='fw-bold text-primary mb-1'>🌟 均一國小部客服 Bot 監控儀表板</h2>
-                            <p class='text-muted mb-0 small'>系統運行中 | 每 30 秒自動更新</p>
-                        </div>
-                        <form action='/admin/reset' method='post' class='mb-0' onsubmit='return confirm(""確定要清空所有統計數據嗎？"");'>
-                            <button type='submit' class='btn btn-outline-danger btn-sm rounded-pill px-4'>重置統計數據</button>
+        {
+            var data = MonitorService.GetSnapshot();
+            string html = $@"
+            <html>
+            <head>
+                <title>均一國小 客服Bot 監控後台</title>
+                <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'>
+                <meta http-equiv='refresh' content='30'>
+            </head>
+            <body class='container mt-5' style='background-color:#f8f9fa;'>
+                <div class='p-5 mb-4 bg-white rounded-3 shadow-sm'>
+                    <div class='d-flex justify-content-between align-items-center mb-3'>
+                        <h2 class='display-6 text-primary mb-0'>🌟 均一國小 客服Bot 監控儀表板</h2>
+                        <form action='/admin/reset' method='post' onsubmit='return confirm(""確定要清空所有統計數據嗎？"");'>
+                            <button type='submit' class='btn btn-outline-danger'>重置統計數據</button>
                         </form>
                     </div>
-                </div>
-
-                <div class='card-body p-4 bg-light'>
-                    <div class='row g-4 text-center'>
-                        <div class='col-12 col-md-4'>
-                            <div class='card metric-card border-primary shadow-sm h-100'>
-                                <div class='card-body py-4'>
-                                    <h6 class='text-muted mb-2'>統計週期內總請求</h6>
-                                    <h2 class='display-6 fw-bold text-primary'>{data.TotalRequests}</h2>
-                                </div>
-                            </div>
-                        </div>
-                        <div class='col-12 col-md-4'>
-                            <div class='card metric-card border-success shadow-sm h-100'>
-                                <div class='card-body py-4'>
-                                    <h6 class='text-muted mb-2'>統計週期內家長數</h6>
-                                    <h2 class='display-6 fw-bold text-success'>{data.ActiveUserCount}</h2>
-                                </div>
-                            </div>
-                        </div>
-                        <div class='col-12 col-md-4'>
-                            <div class='card metric-card border-info shadow-sm h-100'>
-                                <div class='card-body py-4'>
-                                    <h6 class='text-muted mb-2'>數據累積時長</h6>
-                                    <h2 class='h3 fw-bold text-info mt-2'>{data.Uptime}</h2>
-                                </div>
-                            </div>
-                        </div>
+                    <p class='text-muted'>數據自最後一次重置後開始統計。頁面每 30 秒自動刷新。</p>
+                    <hr>
+                    <div class='row text-center mt-4'>
+                        <div class='col-md-4'><div class='card shadow-sm'><div class='card-body'><h6 class='text-muted'>統計週期內總請求</h6><h3>{data.TotalRequests}</h3></div></div></div>
+                        <div class='col-md-4'><div class='card shadow-sm'><div class='card-body'><h6 class='text-muted'>統計週期內家長數</h6><h3>{data.ActiveUserCount}</h3></div></div></div>
+                        <div class='col-md-4'><div class='card shadow-sm'><div class='card-body'><h6 class='text-muted'>數據累積時長</h6><h3>{data.Uptime}</h3></div></div></div>
                     </div>
+                    <div class='row mt-5'>
+                        <div class='col-md-7'>
+                            <h5 class='mb-3'>🔥 熱門提問關鍵字 (Top 10)</h5>
+                            <table class='table table-hover bg-white'>
+                                <thead class='table-light'><tr><th>關鍵字</th><th class='text-end'>次數</th></tr></thead>
+                                <tbody>";
+            foreach (var item in data.TopKeywords) html += $"<tr><td>{item.Key}</td><td class='text-end'>{item.Value}</td></tr>";
+            html += $@"</tbody></table></div>
+                        <div class='col-md-5'>
+                            <h5 class='mb-3'>👤 最近活躍家長 (ID)</h5>
+                            <ul class='list-group shadow-sm'>";
+            foreach (var user in data.RecentUsers) html += $"<li class='list-group-item small text-truncate'>{user}</li>";
+            html += @"</ul></div></div></div></body></html>";
+            return Content(html, "text/html", Encoding.UTF8);
+        }
 
-                    <div class='row mt-5 g-4'>
-                        <div class='col-lg-7'>
-                            <div class='card border-0 shadow-sm rounded-3 h-100'>
-                                <div class='card-header bg-white border-0 py-3'>
-                                    <h5 class='mb-0 fw-bold'>🔥 熱門提問關鍵字 (Top 10)</h5>
-                                </div>
-                                <div class='card-body p-0'>
-                                    <div class='table-responsive'>
-                                        <table class='table table-hover align-middle mb-0'>
-                                            <thead class='table-light'>
-                                                <tr>
-                                                    <th class='ps-4'>關鍵字</th>
-                                                    <th class='text-end pe-4'>點擊次數</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>";
-                                            foreach (var item in data.TopKeywords) {
-                                                html += $@"<tr>
-                                                            <td class='ps-4'><span class='badge bg-light text-dark border fw-normal'>{item.Key}</span></td>
-                                                            <td class='text-end pe-4 fw-bold text-secondary'>{item.Value} 次</td>
-                                                          </tr>";
-                                            }
-                                            html += $@"</tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class='col-lg-5'>
-                            <div class='card border-0 shadow-sm rounded-3 h-100'>
-                                <div class='card-header bg-white border-0 py-3'>
-                                    <h5 class='mb-0 fw-bold'>👤 最近活躍家長 (ID)</h5>
-                                </div>
-                                <div class='card-body'>
-                                    <div class='list-group list-group-flush'>";
-                                    foreach (var user in data.RecentUsers) {
-                                        html += $@"<div class='list-group-item px-0 border-0 d-flex align-items-center'>
-                                                    <div class='bg-primary rounded-circle me-3' style='width:8px;height:8px;'></div>
-                                                    <span class='small text-truncate text-secondary'>{user}</span>
-                                                  </div>";
-                                    }
-                                    html += $@"</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class='card-footer bg-white border-0 text-center py-3'>
-                    <small class='text-muted'>均一國小部智慧校務系統 &copy; 2026</small>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>";
-
-    return Content(html, "text/html", Encoding.UTF8);
-}
-
-        [HttpPost] [Route("admin/reset")]
-        public IActionResult ResetData() { MonitorService.Reset(); return RedirectToAction("Index"); }
-    }
+        [HttpPost] [Route("admin/reset")]
+        public IActionResult ResetData()
+        {
+            MonitorService.Reset();
+            return RedirectToAction("Index");
+        }
+    }
 
     // --- 3. 歷史紀錄與快取 ---
     public static class ChatHistoryManager
