@@ -51,7 +51,8 @@ namespace isRock.Template
     // --- 2. 管理員控制器 ---
     public class AdminController : Controller
     {
-        [HttpGet] [Route("admin/monitor")]
+        [HttpHead]
+        [HttpGet] [Route("admin/monitor")]
 public IActionResult Index()
         {
             var data = MonitorService.GetSnapshot();
@@ -193,7 +194,8 @@ generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
     // --- 5. LINE WebHook 控制器 ---
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
-        [HttpGet] [Route("api/LineBotOpenAIWebHook")]
+        [HttpHead]
+        [HttpGet] [Route("api/LineBotOpenAIWebHook")]
         public IActionResult Get() => Ok("Bot is Alive! 04/06版");
         [Route("api/LineBotOpenAIWebHook")]
         [HttpPost] [Route("api/LineBotOpenAIWebHook")]
