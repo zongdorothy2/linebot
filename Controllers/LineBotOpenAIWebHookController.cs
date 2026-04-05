@@ -12,7 +12,7 @@ using Newtonsoft.Json;
 
 namespace isRock.Template
 {
-    // --- 1. 監控統計服務 (Monitor Service) ---
+    // --- 1. 監控統計服務 ---
     public static class MonitorService
     {
         private static int _totalRequests = 0;
@@ -20,7 +20,6 @@ namespace isRock.Template
         private static readonly ConcurrentDictionary<string, DateTime> _activeUsers = new ConcurrentDictionary<string, DateTime>();
         private static DateTime _startTime = DateTime.UtcNow.AddHours(8);
 
-        // 紀錄請求
         public static void RecordRequest(string userId, string text)
         {
             Interlocked.Increment(ref _totalRequests);
@@ -29,13 +28,12 @@ namespace isRock.Template
                 _keywordStats.AddOrUpdate(text, 1, (k, v) => v + 1);
         }
 
-        // 重置數據邏輯
         public static void Reset()
         {
             Interlocked.Exchange(ref _totalRequests, 0);
             _keywordStats.Clear();
             _activeUsers.Clear();
-            _startTime = DateTime.UtcNow.AddHours(8); // 重置統計起始時間
+            _startTime = DateTime.UtcNow.AddHours(8);
         }
 
         public static dynamic GetSnapshot()
@@ -50,7 +48,7 @@ namespace isRock.Template
         }
     }
 
-    // --- 2. 管理員儀表板控制器 (Admin Controller) ---
+    // --- 2. 管理員控制器 ---
     public class AdminController : Controller
     {
         [HttpGet] [Route("admin/monitor")]
@@ -96,14 +94,10 @@ namespace isRock.Template
         }
 
         [HttpPost] [Route("admin/reset")]
-        public IActionResult ResetData()
-        {
-            MonitorService.Reset();
-            return RedirectToAction("Index");
-        }
+        public IActionResult ResetData() { MonitorService.Reset(); return RedirectToAction("Index"); }
     }
 
-    // --- 3. 對話歷史與快取管理 ---
+    // --- 3. 歷史紀錄與快取 ---
     public static class ChatHistoryManager
     {
         private static readonly ConcurrentDictionary<string, List<object>> _history = new ConcurrentDictionary<string, List<object>>();
@@ -112,7 +106,6 @@ namespace isRock.Template
         {
             var userHistory = GetHistory(userId);
             userHistory.Add(new { role = (role.ToLower() == "assistant" ? "model" : "user"), parts = new[] { new { text = content } } });
-            // 保持 5 輪對話 (10 則訊息)
             if (userHistory.Count > 10) userHistory.RemoveAt(0);
         }
     }
@@ -124,36 +117,48 @@ namespace isRock.Template
         public static void SetCache(string q, string r) => _cache[q] = (r, DateTime.Now.AddMinutes(30));
     }
 
-    // --- 4. 外部服務 (LINE, Gemini, GAS) ---
+    // --- 4. 服務類別 (修正參數命名問題) ---
     public static class LoadingAnimationManager
     {
-        public static async Task StartLoadingAsync(string token, string id)
+        public static async Task StartLoadingAsync(string? token, string? userId)
         {
-            try { using var client = new HttpClient(); client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                await client.PostAsync("https://api.line.me/v2/bot/chat/loading/start", new StringContent(JsonConvert.SerializeObject(new { chatId = id, loadingSeconds = 20 }), Encoding.UTF8, "application/json"));
+            if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(userId)) return;
+            try { 
+                using var client = new HttpClient(); 
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                await client.PostAsync("https://api.line.me/v2/bot/chat/loading/start", 
+                    new StringContent(JsonConvert.SerializeObject(new { chatId = userId, loadingSeconds = 20 }), Encoding.UTF8, "application/json"));
             } catch { }
         }
     }
 
     public static class GeminiLLM
     {
-        public static async Task<string> GetResponseAsync(string id, string q)
+        public static async Task<string> GetResponseAsync(string userId, string userQuery)
         {
-            if (SearchCacheManager.TryGetCache(q, out string cached)) return cached;
+            if (SearchCacheManager.TryGetCache(userQuery, out string cached)) return cached;
             string key = Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
-            var requestBody = new {
-
-contents = ChatHistoryManager.GetHistory(userId),
-
-systemInstruction = new { parts = new[] { new { text = $"你是一位資深的華德福老師。現在是台灣時間 {DateTime.UtcNow.AddHours(8):yyyy/MM/dd HH:mm}。請用溫柔堅定的語氣和家長說明。" } } },
+            
+            // 統一使用 userId 與 userQuery
+            var requestObj = new { 
+                contents = ChatHistoryManager.GetHistory(userId), 
+                systemInstruction = new { parts = new[] { new { text = $"你是一位資深的華德福老師。現在是台灣時間 {DateTime.UtcNow.AddHours(8):yyyy/MM/dd HH:mm}。請用溫柔堅定的語氣和家長說明。" } } },
 
 generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
 
 };
-            try { using var client = new HttpClient(); var res = await client.PostAsync($"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key={key}", new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json"));
-                dynamic? result = JsonConvert.DeserializeObject(await res.Content.ReadAsStringAsync());
-                string text = result?.candidates?[0]?.content?.parts?[0]?.text ?? "我看見了光。";
-                SearchCacheManager.SetCache(q, text); return text;
+
+            try { 
+                using var client = new HttpClient(); 
+                var res = await client.PostAsync($"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key={key}", 
+                    new StringContent(JsonConvert.SerializeObject(requestObj), Encoding.UTF8, "application/json"));
+                
+                var jsonResponse = await res.Content.ReadAsStringAsync();
+                dynamic? result = JsonConvert.DeserializeObject(jsonResponse);
+                string textResult = result?.candidates?[0]?.content?.parts?[0]?.text ?? "我看見了光。";
+                
+                SearchCacheManager.SetCache(userQuery, textResult); 
+                return textResult;
             } catch { return "暫時連線不穩定。"; }
         }
     }
@@ -161,16 +166,23 @@ generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
     public static class GASSheetService
     {
         private static string Url => Environment.GetEnvironmentVariable("GAS_WEBAPP_URL") ?? "";
-        public static async Task<string?> GetResponseAsync(string q)
+        public static async Task<string?> GetResponseAsync(string userQuery)
         {
-            try { using var client = new HttpClient(); var res = await client.PostAsync(Url, new StringContent(JsonConvert.SerializeObject(new { action = "search", query = q }), Encoding.UTF8, "application/json"));
+            if (string.IsNullOrEmpty(Url)) return null;
+            try { 
+                using var client = new HttpClient(); 
+                var res = await client.PostAsync(Url, new StringContent(JsonConvert.SerializeObject(new { action = "search", query = userQuery }), Encoding.UTF8, "application/json"));
                 dynamic? result = JsonConvert.DeserializeObject(await res.Content.ReadAsStringAsync());
                 return result?.status == "success" ? (string)result.answer : null;
             } catch { return null; }
         }
-        public static async Task LogAsync(string id, string q, string a)
+        public static async Task LogAsync(string userId, string userQuery, string aiAnswer)
         {
-            try { using var client = new HttpClient(); await client.PostAsync(Url, new StringContent(JsonConvert.SerializeObject(new { action = "log", userId = id, query = q, answer = a }), Encoding.UTF8, "application/json")); } catch { }
+            if (string.IsNullOrEmpty(Url)) return;
+            try { 
+                using var client = new HttpClient(); 
+                await client.PostAsync(Url, new StringContent(JsonConvert.SerializeObject(new { action = "log", userId = userId, query = userQuery, answer = aiAnswer }), Encoding.UTF8, "application/json")); 
+            } catch { }
         }
     }
 
@@ -178,32 +190,34 @@ generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
         [HttpGet] [Route("api/LineBotOpenAIWebHook")]
-        public IActionResult Get() => Ok("V2.2.1 Active");
+        public IActionResult Get() => Ok("V2.2.2 Fixed");
 
         [HttpPost] [Route("api/LineBotOpenAIWebHook")]
         public async Task<IActionResult> POST()
         {
             try {
                 this.ChannelAccessToken = Environment.GetEnvironmentVariable("LINE_CHANNEL_TOKEN");
-                var e = this.ReceivedMessage?.events?.FirstOrDefault();
-                if (e?.type.ToLower() == "message" && e.message.type == "text") {
-                    string id = e.source.userId; string txt = e.message.text;
+                var lineEvent = this.ReceivedMessage?.events?.FirstOrDefault();
+                
+                if (lineEvent?.type.ToLower() == "message" && lineEvent.message.type == "text") {
+                    string userId = lineEvent.source.userId; 
+                    string userText = lineEvent.message.text;
                     
-                    MonitorService.RecordRequest(id, txt);
-                    _ = LoadingAnimationManager.StartLoadingAsync(this.ChannelAccessToken, id);
+                    MonitorService.RecordRequest(userId, userText);
+                    _ = LoadingAnimationManager.StartLoadingAsync(this.ChannelAccessToken, userId);
 
-                    string? reply = await GASSheetService.GetResponseAsync(txt);
+                    string? reply = await GASSheetService.GetResponseAsync(userText);
                     if (string.IsNullOrEmpty(reply)) {
-                        ChatHistoryManager.AddMessage(id, "user", txt);
-                        reply = await GeminiLLM.GetResponseAsync(id, txt);
-                        ChatHistoryManager.AddMessage(id, "assistant", reply);
-                        _ = GASSheetService.LogAsync(id, txt, reply);
-                        reply += "\n\n（以上由Gemini AI 協助回覆）";
+                        ChatHistoryManager.AddMessage(userId, "user", userText);
+                        reply = await GeminiLLM.GetResponseAsync(userId, userText);
+                        ChatHistoryManager.AddMessage(userId, "assistant", reply);
+                        _ = GASSheetService.LogAsync(userId, userText, reply);
+                        reply += "\n\n（以上由Gemini AI 協助回覆，如有任何疑問歡迎電話聯繫學校。）";
                     }
-                    this.ReplyMessage(e.replyToken, reply);
+                    this.ReplyMessage(lineEvent.replyToken, reply);
                 }
             } catch { }
             return Ok();
         }
     }
-}
+} 
