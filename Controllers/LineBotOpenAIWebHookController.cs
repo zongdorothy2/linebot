@@ -197,7 +197,6 @@ generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
         [HttpHead]
         [HttpGet] [Route("api/LineBotOpenAIWebHook")]
         public IActionResult Get() => Ok("Bot is Alive! 04/06版");
-        [Route("api/LineBotOpenAIWebHook")]
         [HttpPost] [Route("api/LineBotOpenAIWebHook")]
         public async Task<IActionResult> POST()
         {
