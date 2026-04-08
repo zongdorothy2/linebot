@@ -190,7 +190,27 @@ generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
             } catch { }
         }
     }
+// 在 Program.cs 中加入一個簡單的定時器
+var client = new HttpClient();
+_ = Task.Run(async () =>
+{
+    while (true)
+    {
+        try
+        {
+            // 換成你自己的 Render 網址
+            await client.GetAsync("https://linebot-b09v.onrender.com/api/LineBotOpenAIWebHook");
+            Console.WriteLine("Self-ping sent successfully.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Self-ping failed: {ex.Message}");
+        }
+        await Task.Delay(TimeSpan.FromMinutes(10)); // 每 10 分鐘執行一次
+    }
+});
 
+        
     // --- 5. LINE WebHook 控制器 ---
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
