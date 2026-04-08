@@ -1,29 +1,23 @@
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
+// 註冊控制器服務
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// 設定 HTTP 請求管道
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
-var app = builder.Build();
 
-// 啟動自動喚醒任務
+// --- 重要：啟動背景自動喚醒任務 ---
 isRock.Template.SelfPingService.Start();
 
-app.Run();
-
 app.UseHttpsRedirection();
-
 app.UseAuthorization();
-
 app.MapControllers();
 
+// 程式最後只能有一個 app.Run()
 app.Run();
