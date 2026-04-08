@@ -13,6 +13,12 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+var app = builder.Build();
+
+// 啟動自動喚醒任務
+isRock.Template.SelfPingService.Start();
+
+app.Run();
 
 app.UseHttpsRedirection();
 
