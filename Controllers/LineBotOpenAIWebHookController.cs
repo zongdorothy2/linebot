@@ -190,25 +190,33 @@ generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
             } catch { }
         }
     }
-// 在 Program.cs 中加入一個簡單的定時器
-var client = new HttpClient();
-_ = Task.Run(async () =>
-{
-    while (true)
+    // --- 4.5 自動喚醒服務 (Self-Ping) ---
+    public static class SelfPingService
     {
-        try
+        private static readonly HttpClient client = new HttpClient();
+        public static void Start()
         {
-            // 換成你自己的 Render 網址
-            await client.GetAsync("https://linebot-b09v.onrender.com/api/LineBotOpenAIWebHook");
-            Console.WriteLine("Self-ping sent successfully.");
+            _ = Task.Run(async () =>
+            {
+                // 等待 5 秒讓系統完全啟動後再開始第一次 Ping
+                await Task.Delay(5000); 
+                while (true)
+                {
+                    try
+                    {
+                        // 這是你的 Render 網址
+                        var response = await client.GetAsync("https://linebot-b09v.onrender.com/api/LineBotOpenAIWebHook");
+                        Console.WriteLine($"[Self-Ping] Status: {response.StatusCode} at {DateTime.Now}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Self-Ping] Error: {ex.Message}");
+                    }
+                    await Task.Delay(TimeSpan.FromMinutes(10)); 
+                }
+            });
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Self-ping failed: {ex.Message}");
-        }
-        await Task.Delay(TimeSpan.FromMinutes(10)); // 每 10 分鐘執行一次
     }
-});
 
         
     // --- 5. LINE WebHook 控制器 ---
