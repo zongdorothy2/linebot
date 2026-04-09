@@ -1,4 +1,3 @@
-完整記錄下下面原始碼
 using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
