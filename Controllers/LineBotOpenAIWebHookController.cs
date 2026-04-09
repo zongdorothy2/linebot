@@ -1,3 +1,4 @@
+完整記錄下下面原始碼
 using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
@@ -51,56 +52,55 @@ namespace isRock.Template
     // --- 2. 管理員控制器 ---
     public class AdminController : Controller
     {
-        [HttpHead]
-        [HttpGet] [Route("admin/monitor")]
+        [HttpGet] [Route("admin/monitor")]
 public IActionResult Index()
-        {
-            var data = MonitorService.GetSnapshot();
-            string html = $@"
-            <html>
-            <head>
-                <title>均一國小 客服Bot 監控後台</title>
-                <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'>
-                <meta http-equiv='refresh' content='30'>
-            </head>
-            <body class='container mt-5' style='background-color:#f8f9fa;'>
-                <div class='p-5 mb-4 bg-white rounded-3 shadow-sm'>
-                    <div class='d-flex justify-content-between align-items-center mb-3'>
-                        <h2 class='display-6 text-primary mb-0'>🌟 均一國小 客服Bot 監控儀表板</h2>
-                        <form action='/admin/reset' method='post' onsubmit='return confirm(""確定要清空所有統計數據嗎？"");'>
-                            <button type='submit' class='btn btn-outline-danger'>重置統計數據</button>
-                        </form>
-                    </div>
-                    <p class='text-muted'>數據自最後一次重置後開始統計。頁面每 30 秒自動刷新。</p>
-                    <hr>
-                    <div class='row text-center mt-4'>
-                        <div class='col-md-4'><div class='card shadow-sm'><div class='card-body'><h6 class='text-muted'>統計週期內總請求</h6><h3>{data.TotalRequests}</h3></div></div></div>
-                        <div class='col-md-4'><div class='card shadow-sm'><div class='card-body'><h6 class='text-muted'>統計週期內家長數</h6><h3>{data.ActiveUserCount}</h3></div></div></div>
-                        <div class='col-md-4'><div class='card shadow-sm'><div class='card-body'><h6 class='text-muted'>數據累積時長</h6><h3>{data.Uptime}</h3></div></div></div>
-                    </div>
-                    <div class='row mt-5'>
-                        <div class='col-md-7'>
-                            <h5 class='mb-3'>🔥 熱門提問關鍵字 (Top 10)</h5>
-                            <table class='table table-hover bg-white'>
-                                <thead class='table-light'><tr><th>關鍵字</th><th class='text-end'>次數</th></tr></thead>
-                                <tbody>";
-            foreach (var item in data.TopKeywords) html += $"<tr><td>{item.Key}</td><td class='text-end'>{item.Value}</td></tr>";
-            html += $@"</tbody></table></div>
-                        <div class='col-md-5'>
-                            <h5 class='mb-3'>👤 最近活躍家長 (ID)</h5>
-                            <ul class='list-group shadow-sm'>";
-            foreach (var user in data.RecentUsers) html += $"<li class='list-group-item small text-truncate'>{user}</li>";
-            html += @"</ul></div></div></div></body></html>";
-            return Content(html, "text/html", Encoding.UTF8);
-        }
+        {
+            var data = MonitorService.GetSnapshot();
+            string html = $@"
+            <html>
+            <head>
+                <title>均一國小 客服Bot 監控後台</title>
+                <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'>
+                <meta http-equiv='refresh' content='30'>
+            </head>
+            <body class='container mt-5' style='background-color:#f8f9fa;'>
+                <div class='p-5 mb-4 bg-white rounded-3 shadow-sm'>
+                    <div class='d-flex justify-content-between align-items-center mb-3'>
+                        <h2 class='display-6 text-primary mb-0'>🌟 均一國小 客服Bot 監控儀表板</h2>
+                        <form action='/admin/reset' method='post' onsubmit='return confirm(""確定要清空所有統計數據嗎？"");'>
+                            <button type='submit' class='btn btn-outline-danger'>重置統計數據</button>
+                        </form>
+                    </div>
+                    <p class='text-muted'>數據自最後一次重置後開始統計。頁面每 30 秒自動刷新。</p>
+                    <hr>
+                    <div class='row text-center mt-4'>
+                        <div class='col-md-4'><div class='card shadow-sm'><div class='card-body'><h6 class='text-muted'>統計週期內總請求</h6><h3>{data.TotalRequests}</h3></div></div></div>
+                        <div class='col-md-4'><div class='card shadow-sm'><div class='card-body'><h6 class='text-muted'>統計週期內家長數</h6><h3>{data.ActiveUserCount}</h3></div></div></div>
+                        <div class='col-md-4'><div class='card shadow-sm'><div class='card-body'><h6 class='text-muted'>數據累積時長</h6><h3>{data.Uptime}</h3></div></div></div>
+                    </div>
+                    <div class='row mt-5'>
+                        <div class='col-md-7'>
+                            <h5 class='mb-3'>🔥 熱門提問關鍵字 (Top 10)</h5>
+                            <table class='table table-hover bg-white'>
+                                <thead class='table-light'><tr><th>關鍵字</th><th class='text-end'>次數</th></tr></thead>
+                                <tbody>";
+            foreach (var item in data.TopKeywords) html += $"<tr><td>{item.Key}</td><td class='text-end'>{item.Value}</td></tr>";
+            html += $@"</tbody></table></div>
+                        <div class='col-md-5'>
+                            <h5 class='mb-3'>👤 最近活躍家長 (ID)</h5>
+                            <ul class='list-group shadow-sm'>";
+            foreach (var user in data.RecentUsers) html += $"<li class='list-group-item small text-truncate'>{user}</li>";
+            html += @"</ul></div></div></div></body></html>";
+            return Content(html, "text/html", Encoding.UTF8);
+        }
 
-        [HttpPost] [Route("admin/reset")]
-        public IActionResult ResetData()
-        {
-            MonitorService.Reset();
-            return RedirectToAction("Index");
-        }
-    }
+        [HttpPost] [Route("admin/reset")]
+        public IActionResult ResetData()
+        {
+            MonitorService.Reset();
+            return RedirectToAction("Index");
+        }
+    }
 
     // --- 3. 歷史紀錄與快取 ---
     public static class ChatHistoryManager
@@ -190,41 +190,13 @@ generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
             } catch { }
         }
     }
-    // --- 4.5 自動喚醒服務 (Self-Ping) ---
-    public static class SelfPingService
-    {
-        private static readonly HttpClient client = new HttpClient();
-        public static void Start()
-        {
-            _ = Task.Run(async () =>
-            {
-                // 等待 5 秒讓系統完全啟動後再開始第一次 Ping
-                await Task.Delay(5000); 
-                while (true)
-                {
-                    try
-                    {
-                        // 這是你的 Render 網址
-                        var response = await client.GetAsync("https://linebot-b09v.onrender.com/api/LineBotOpenAIWebHook");
-                        Console.WriteLine($"[Self-Ping] Status: {response.StatusCode} at {DateTime.Now}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[Self-Ping] Error: {ex.Message}");
-                    }
-                    await Task.Delay(TimeSpan.FromMinutes(10)); 
-                }
-            });
-        }
-    }
 
-        
     // --- 5. LINE WebHook 控制器 ---
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
-        [HttpHead]
-        [HttpGet] [Route("api/LineBotOpenAIWebHook")]
+        [HttpGet] [Route("api/LineBotOpenAIWebHook")]
         public IActionResult Get() => Ok("Bot is Alive! 04/06版");
+        [Route("api/LineBotOpenAIWebHook")]
         [HttpPost] [Route("api/LineBotOpenAIWebHook")]
         public async Task<IActionResult> POST()
         {
@@ -254,3 +226,4 @@ generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
         }
     }
 } 
+GAS原始碼維持不變
