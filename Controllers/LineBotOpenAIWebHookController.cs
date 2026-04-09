@@ -52,20 +52,20 @@ namespace isRock.Template
     public class AdminController : Controller
     {
         [HttpGet] [Route("admin/monitor")]
-public IActionResult Index()
+        public IActionResult Index()
         {
             var data = MonitorService.GetSnapshot();
             string html = $@"
             <html>
             <head>
-                <title>均一國小 客服Bot 監控後台</title>
+                <title>均一國小部客服 Bot 監控後台</title>
                 <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'>
                 <meta http-equiv='refresh' content='30'>
             </head>
             <body class='container mt-5' style='background-color:#f8f9fa;'>
                 <div class='p-5 mb-4 bg-white rounded-3 shadow-sm'>
                     <div class='d-flex justify-content-between align-items-center mb-3'>
-                        <h2 class='display-6 text-primary mb-0'>🌟 均一國小 客服Bot 監控儀表板</h2>
+                        <h2 class='display-6 text-primary mb-0'>🌟 均一國小部客服 Bot 監控儀表板</h2>
                         <form action='/admin/reset' method='post' onsubmit='return confirm(""確定要清空所有統計數據嗎？"");'>
                             <button type='submit' class='btn btn-outline-danger'>重置統計數據</button>
                         </form>
@@ -94,11 +94,7 @@ public IActionResult Index()
         }
 
         [HttpPost] [Route("admin/reset")]
-        public IActionResult ResetData()
-        {
-            MonitorService.Reset();
-            return RedirectToAction("Index");
-        }
+        public IActionResult ResetData() { MonitorService.Reset(); return RedirectToAction("Index"); }
     }
 
     // --- 3. 歷史紀錄與快取 ---
@@ -194,8 +190,8 @@ generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
     public class LineBotOpenAIWebHookController : isRock.LineBot.LineWebHookControllerBase
     {
         [HttpGet] [Route("api/LineBotOpenAIWebHook")]
-        public IActionResult Get() => Ok("Bot is Alive! 04/06版");
-        [Route("api/LineBotOpenAIWebHook")]
+        public IActionResult Get() => Ok("V2.2.2 Fixed");
+
         [HttpPost] [Route("api/LineBotOpenAIWebHook")]
         public async Task<IActionResult> POST()
         {
@@ -225,4 +221,3 @@ generationConfig = new { maxOutputTokens = 1500, temperature = 0.7 }
         }
     }
 } 
-GAS原始碼維持不變
